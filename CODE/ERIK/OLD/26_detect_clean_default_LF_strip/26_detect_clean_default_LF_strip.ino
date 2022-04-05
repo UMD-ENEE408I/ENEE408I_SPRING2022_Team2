@@ -1,0 +1,2493 @@
+
+// THOUGHTS:
+// PRELOAD SETPOINTS FOR NEGATIVE ROOM. <-- CROSS THIS BRIDGE WHEN WE GET THERE. 
+
+
+// THINGS TO DO:
+/*
+
+- Abstract D detect and D move
+- The rest of the speacial cases.
+- Double check the gate holds for D_move.
+- Auto calibrating bin threshold.
+- Add coupon for right turn final detection.
+- Gradually stop wheels when stop command.
+- Inspect why wheel two delays in rotating in D-move. <--- FIX FIX FIX! THE ISSUE IS THAT THE TWINKY IS STILL COUNTING AS A FUNCTION OF TIME.
+- CORNER CASE OF A STUB OF WHITE TAPE CONTINUING ON AT THE END OF A RT.
+- Move the speciale cases in a way so that the other stuff does not have to calculate if being overiden.
+
+*/
+
+
+
+
+
+// ______ LIBRARYS______
+
+#include <Encoder.h>
+#include <Adafruit_MCP3008.h>
+
+
+
+
+
+
+// ______ GLOBAL VARIABLES by Function ______
+
+
+  // OVERALL
+  int a = 0 ;
+  
+  float twinky_one_speed_const = 0.40 ;
+  float twinky_two_speed_const = twinky_one_speed_const ;
+
+  float twinky_one_speed = twinky_one_speed_const ;
+  float twinky_two_speed = twinky_one_speed_const ;
+
+
+
+  // SPECIAL DETECT
+  bool decision = 1 ;  // <-- ONE IS A NUTRAL DECISION
+  bool rdy_for_dec = 0 ;
+  bool hault = 0 ;
+  bool out_detect = 0 ;
+
+    // SAMPLE BIN
+    int light_values_bin[ 16 ] ;
+    bool cur_bin_aray[ 16 ] ;
+  
+    // COMPARE BIN
+    bool prev_bin_aray[ 16 ] ;
+    bool last_in_bin_aray[ 16 ] ;
+    bool comp_bin_diff = 0 ;
+    bool comp_bin = 0 ;
+    bool comp_bin_last = 0 ;
+  
+    // OBSERVE IN BIN
+    bool rst_gate = 1 ;
+    int prev_enc_one = 0 ;
+    int prev_enc_two = 0 ;
+  
+    // SUM BIN ARAY
+    short sum_bin = 0 ;
+
+    // DET IN SIG
+    bool flag_ln = 0 ;
+    bool flag_f = 0 ;
+    bool flag_de = 0 ;
+    bool flag_r = 0 ;
+    bool flag_l = 0 ;
+    bool flag_t = 0 ;
+
+    // DET OUT SIG 
+    bool flag_dr = 0 ;
+    bool flag_dl = 0 ;
+    bool flag_dt = 0 ;
+    bool flag_or = 0 ;
+    bool flag_ol = 0 ;
+    bool flag_ot = 0 ;
+
+    // DECISION APLY
+    bool go_r_move = 0 ;
+    bool go_l_move = 0 ;
+    bool go_d_move = 0 ;
+    bool go_f_move = 0 ;
+
+
+
+
+
+/*
+
+  // MOVE COMMANDS
+    bool rt_wheel_one_mv_complt = 0 ;
+    bool rt_wheel_two_mv_complt = 0 ;
+    bool rt_mv_rot_one_cmplt = 0 ;
+    bool rt_mv_rot_two_cmplt = 0 ;
+    bool rt_mv_fwd_one_cmplt = 0 ;
+    bool rt_mv_fwd_two_cmplt = 0 ;
+*/
+
+
+  // PID LF CONTROL
+  unsigned int prev_line_err_time = 0 ;
+  float twinky_max = twinky_one_speed ;    // <-- CONSOLIDATE. GET RID OF THIS TWINKY MAX STUFF.
+  float twinky_min = twinky_one_speed * -1 ;
+
+
+
+  // PID VL CONTROL
+  float twinky_one = 0 ;
+  float twinky_two = 0 ;
+  unsigned int prev_twinky_time = 0 ;
+  float twinky_one_d = 0 ;
+  float twinky_two_d = 0 ;
+  bool d_mv_cmplt = 0 ;
+  bool d_mv_fwd_one_cmplt = 0 ;
+  bool d_mv_fwd_two_cmplt = 0 ;
+  bool d_mv_rot_one_cmplt = 0 ;
+  bool d_mv_rot_two_cmplt = 0 ;
+  bool d_mv_latch = 0 ;
+
+
+
+  // LINE LF PID CALC
+  float line_lf_PID_err = 0 ;
+  float line_lf_PID_err_prev = 0 ;
+  float line_lf_PID_P = 0 ;
+  float line_lf_PID_I = 0 ;
+  float line_lf_PID_D = 0 ;
+  float line_lf_PID_out = 0 ;
+  float line_lf_PID_feedback = 0 ;
+  unsigned int line_lf_PID_D_time_prev = 0 ;
+  float line_lf_PID_KP = 00.0005 ;
+  float line_lf_PID_KI = 00.0000 ;
+  float line_lf_PID_KD = 00.0000 ;
+
+
+
+  // WHL 1 VL PID CALC
+  float whl_1_vl_PID_err = 0 ;
+  float whl_1_vl_PID_err_prev = 0 ;
+  float whl_1_vl_PID_P = 0 ;
+  float whl_1_vl_PID_I = 0 ;
+  float whl_1_vl_PID_D = 0 ;
+  float whl_1_vl_PID_out = 0 ;
+  float whl_1_vl_PID_feedback = 0 ;
+  unsigned int whl_1_vl_PID_D_time_prev = 0 ;
+  float whl_1_vl_PID_KP = 00.9000 ;
+  float whl_1_vl_PID_KI = 00.0180 ;
+  float whl_1_vl_PID_KD = 20.0000 ;
+
+
+
+  // WHL 2 VL PID CALC
+  float whl_2_vl_PID_err = 0 ;
+  float whl_2_vl_PID_err_prev = 0 ;
+  float whl_2_vl_PID_P = 0 ;
+  float whl_2_vl_PID_I = 0 ;
+  float whl_2_vl_PID_D = 0 ;
+  float whl_2_vl_PID_out = 0 ;
+  float whl_2_vl_PID_feedback = 0 ;
+  unsigned int whl_2_vl_PID_D_time_prev = 0 ;
+  float whl_2_vl_PID_KP = 00.9000 ;
+  float whl_2_vl_PID_KI = 00.0180 ;
+  float whl_2_vl_PID_KD = 20.0000 ;
+
+
+
+  // LINE ERROR CALC
+  unsigned int light_values_left_sum = 0 ;
+  unsigned int light_values_right_sum = 0 ;
+  unsigned int light_values[ 16 ] ;
+  int line_error = 0 ;
+
+
+
+  // PRINT OUT
+  unsigned int prev_print_time = 0 ;
+
+
+
+
+
+
+// HARDWARE PINS
+
+  const short RF_CS = A4 ;
+  const short ADC_1_CS = A3 ;
+  const short ADC_2_CS = A2 ;
+
+  const unsigned short M1_IN_1 = 2 ;
+  const unsigned short M1_IN_2 = 3 ;
+  const unsigned short M2_IN_1 = 5 ;
+  const unsigned short M2_IN_2 = 4 ;
+  
+  const unsigned short M1_ENC_A = 6 ;
+  const unsigned short M1_ENC_B = 7 ;
+  const unsigned short M2_ENC_A = 8 ;
+  const unsigned short M2_ENC_B = 9 ;
+
+
+
+
+
+
+
+// _______ OBJECTS _______
+
+Adafruit_MCP3008 adc1;
+Adafruit_MCP3008 adc2;
+
+Encoder enc1( M1_ENC_A, M1_ENC_B ) ;
+Encoder enc2( M2_ENC_A, M2_ENC_B ) ;
+
+
+
+
+
+
+
+// ______ FUNCTION DECLARATION ______
+
+void printout() ;
+void command_motors() ;
+void pid_vl_control() ;
+void pid_lf_control() ;
+void line_error_calc() ;
+void light_sensor_read() ;
+void whl_1_vl_PID_calc() ;
+void whl_2_vl_PID_calc() ;
+void line_lf_PID_calc() ;
+void special_detect() ;
+void sample_bin() ;
+void compare_bin() ;
+void update_prev_aray() ;
+void observe_in_bin() ;
+void observe_out_bin() ;
+void sum_bin_aray() ;
+void det_in_sig() ;
+void det_out_sig() ;
+void decision_aply() ;
+void decision_recv() ;
+
+
+
+
+// ______ SETUP ______
+
+void setup() 
+{
+
+  // BEGIN SERIAL
+  Serial.begin(9600) ;
+
+  // RADIO?
+  pinMode(RF_CS, OUTPUT);
+  digitalWrite(RF_CS, HIGH); // Without this the nRF24 will write to the SPI bus while the ADC's are also talking
+  
+  // ADC INITIATION
+  adc1.begin(ADC_1_CS);  
+  adc2.begin(ADC_2_CS);  
+
+
+
+  // GET SERIAL PRINTING FIRST
+  for( a = 0 ; a < 25 ; a++ )
+  {
+    Serial.println( " " ) ;
+    Serial.println( " ****NEW SESSION**** " ) ;
+    delay(100) ; 
+  }
+
+
+
+
+} // <-- setup()
+
+
+
+
+
+
+
+
+
+
+
+
+// _____________ MAIN _____________                                <---------- M A I N ---------<
+
+void loop() 
+{
+
+
+/*
+    // CHECK FOR SERIAL
+    while ( Serial.available() == 0 )
+    {
+        // DO NOTHING
+    } 
+*/
+
+
+    // CHECK FOR SPECIAL CASE
+    special_detect() ;     // <-- ADD A CONDITION THAT CHECKS FOR SPECIAL MOVE COMPLETION FIRST
+
+
+
+    
+
+delay( 500 ) ;
+
+
+    
+/*
+    // LINE FOLLOW PID CONTROL
+    if( ( millis() - prev_line_err_time ) > 40 )   // <-- IF NO SPECIAL DETECT THEN LINE FOLLOW
+    {
+        pid_lf_control() ;
+        prev_line_err_time = millis() ;
+    }
+*/
+
+    /*
+    // MOTOR PID CONTROL
+    if( ( millis() - prev_twinky_time ) > 20 )
+    { 
+        pid_vl_control() ; 
+        prev_twinky_time = millis() ;
+    }
+    */
+
+/*
+    // PRINTOUT
+    if( ( millis() - prev_print_time ) > 1000 )
+    {     
+      
+      printout() ; 
+      
+      prev_print_time = millis () ;
+    }
+*/
+
+
+} // <-- main()                                                     <---------- E N D ---------< 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ___________________________________________ FUNCTION LAND ___________________________________________
+// _____________________________________________________________________________________________________
+
+
+
+
+
+
+
+// ______ SPECIAL DETECT () ______   // <-- NOTE: WILL NOT IMPEED LINE FOLLOW.
+
+void special_detect()
+{
+
+//printout() ; 
+Serial.println( " " ) ;
+Serial.println( "* * * * * * ___IN_SPEC_()___ * * * * * *" ) ;
+Serial.print( "   Ot_Det: " ) ;
+Serial.println( out_detect ) ;
+Serial.print( "   Ry_dec: " ) ;
+Serial.println( rdy_for_dec ) ;
+Serial.print( "   Hlt: " ) ;
+Serial.println( hault ) ;
+
+
+    // IF NOT LOOKING FOR OUT BIN SIG
+    if( out_detect == 0 ) observe_in_bin() ;
+
+    // ELSE OBSERVE OUT BIN
+    else observe_out_bin() ;
+
+    // DECISION CHECK
+    if ( rdy_for_dec == 1 || hault == 1 ) 
+    {
+        //decision_recv() ;
+
+        // APLY DECISION
+        decision_aply() ;
+    }
+
+
+
+
+} // <-- special_detect()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ______ SAMPLE_BIN () ______
+
+void sample_bin()
+{
+
+    // READ IN LIGHT VALUES
+    light_sensor_read() ;
+  
+    // OBTAIN BINARY ARRAY
+    for ( a = 0 ; a < 13 ; a++ ) 
+    {
+        // THRESHOLD
+        if( light_values[ a ] <= 680 ) cur_bin_aray[ a ]  = 1 ;      // <--- SUGGEST CHANGING THRESHOLD AS A FUNCTION OF POSTION ON LIGHT BAR. BUT THAT MAY REQUIRE SPECIAL DETECTION OF WHEN PERPENDICUALR TO THE TAPE. ACTUALLY THIS DOES NOT MATTER FOR THE BINARY CASE.
+        else cur_bin_aray[ a ] = 0 ;
+    }
+
+} // <--- sample_bin()
+
+
+
+
+
+
+
+
+
+
+// ______ COMPARE_BIN () ______
+
+void compare_bin()
+{
+
+
+//printout() ; 
+Serial.println( " " ) ;
+Serial.println( "___IN_COMPARE_()___" ) ;
+
+
+    // RESET COMPARER VARIABLES
+    comp_bin = 0 ;
+    comp_bin_diff = 0 ;
+    comp_bin_last = 0 ;
+
+
+    // COMPARE BIN
+    for ( a = 0 ; a < 13 ; a++ ) 
+    {
+        // READ CURRENT BIN ARAY
+        if( cur_bin_aray[ a ] != prev_bin_aray[ a ] ) 
+        {
+            // NOT THE SAME
+            comp_bin_diff = 1 ;
+        }
+
+    }
+
+    // IF NO DIFFERENCE FOUND AT END OF FOR LOOP
+    if( a >= 12 && comp_bin_diff != 1 ) comp_bin = 1 ;
+
+    // ELSE A DIFERENSE WAS FOUND
+    else comp_bin = 0 ;
+
+
+
+    // IF OUT BIN OPERATION
+    if( out_detect == 1 )
+    {
+        // COMPARE LAST IN BIN
+        for ( a = 0 ; a < 13 ; a++ ) 
+        {
+            // READ CURRENT BIN ARAY
+            if( cur_bin_aray[ a ] != last_in_bin_aray[ a ] )
+            {
+                // NOT THE SAME
+                comp_bin_last = 0 ;
+    
+                // RETURN
+                return ;
+            }
+        }
+
+        // IF NO DIFFERENCE FOUND AT END OF FOR LOOP
+        comp_bin_last = 1 ;
+
+    }
+
+
+
+
+Serial.print( "   Cmp_bin: " ) ;
+Serial.println( comp_bin ) ;
+Serial.print( "   Ot_Det: " ) ;
+Serial.println( out_detect ) ;
+Serial.print( "   Cmp_bin_lst: " ) ;
+Serial.println( comp_bin_last ) ;
+
+
+
+
+
+
+    
+
+} // <--- compare_bin()
+
+
+
+
+
+
+
+
+
+
+// ______ UPDATE_PREV_ARAY () ______
+
+void update_prev_aray()
+{
+  
+    // COMPARE BIN
+    for ( a = 0 ; a < 13 ; a++ ) 
+    {
+        // READ CURRENT BIN ARAY
+        prev_bin_aray[ a ] = cur_bin_aray[ a ] ;
+        
+        // IF NOT DOING AN OUT DETECT KEEP A RECORD OF THE LAST ARAY
+        if( out_detect == 0 ) last_in_bin_aray[ a ] = cur_bin_aray[ a ] ;
+    }
+    
+
+} // <--- update_prev_aray()
+
+
+
+
+
+
+
+
+// ______ OBSERVE_IN_BIN () ______
+
+void observe_in_bin()
+{
+
+
+//printout() ; 
+Serial.println( " " ) ;
+Serial.println( "___IN_OBSRV_IN_()___" ) ;
+
+    // SAMPLE THE BIN ARRAY
+    sample_bin() ;
+
+    // COMPARE THE BIN ARRAY
+    compare_bin() ;
+
+    // UPDATE PREVIOUS ARRAY
+    update_prev_aray() ;
+
+Serial.println( " " ) ;
+Serial.println( "___BACK_IN_OBSRV_IN_()___" ) ;
+Serial.print( "   Cmp_bin: " ) ;
+Serial.println( comp_bin ) ;
+Serial.print( "   rst_gt: " ) ;
+Serial.println( rst_gate ) ;
+Serial.print( "   P_ec_one: " ) ;
+Serial.println( prev_enc_one ) ;
+
+    // UPDATE POSITION
+    if( comp_bin == 1 && rst_gate == 1 )
+    {
+        // RESET RST_GATE
+        rst_gate = 0 ;
+
+        // UPDATE POSTIONS
+        prev_enc_one = enc1.read() ;
+        prev_enc_two = enc2.read() * -1 ;
+      
+    } // <-- if( bin )
+
+
+    // IF NOT THE SAME
+    if( comp_bin == 0 )
+    {
+        // RESET RST_GATE
+        rst_gate = 1 ;
+    }
+
+
+    // ELSE IF UN_INTURUPTED DETECTION
+    else if( ( enc1.read() - prev_enc_one > 10 ) || ( ( enc2.read() * -1 ) - prev_enc_two > 10 ) )
+    {
+        // RESET RST_GATE
+        rst_gate = 1 ;
+
+        // DETERMINE INITIAL SIGNATURE
+        det_in_sig() ;
+
+    } // <-- else_if( enc - prev )
+
+    
+} // <--- observe_in_bin()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ______ OBSERVE_OUT_BIN () ______
+
+void observe_out_bin()
+{
+
+//printout() ; 
+Serial.println( " " ) ;
+Serial.println( "___IN_OBSRV_OUT_()___" ) ;
+
+
+    // SAMPLE THE BIN ARRAY
+    sample_bin() ;
+
+    // COMPARE THE BIN ARRAY
+    compare_bin() ;  
+    
+    // UPDATE PREVIOUS ARRAY
+    update_prev_aray() ;
+
+Serial.println( " " ) ;
+Serial.println( "___BACK_IN_OBSRV_OUT_()___" ) ;
+Serial.print( "   Cmp_bin: " ) ;
+Serial.println( comp_bin ) ;
+Serial.print( "   Cmp_bin_lst: " ) ;
+Serial.println( comp_bin_last ) ;
+Serial.print( "   rst_gt: " ) ;
+Serial.println( rst_gate ) ;
+Serial.print( "   P_ec_one: " ) ;
+Serial.println( prev_enc_one ) ;
+
+
+    // UPDATE POSITION
+    if( comp_bin == 1 && comp_bin_last == 0 && rst_gate == 1 )  // <-- NOT SURE ABOUT THIS LOGIC.
+    {
+        // RESET RST_GATE
+        rst_gate = 0 ;
+
+        // UPDATE POSTIONS
+        prev_enc_one = enc1.read() ;
+        prev_enc_two = enc2.read() * -1 ;
+      
+    } // <-- if( bin )
+
+
+    // IF NOT THE SAME
+    if( comp_bin == 0 || comp_bin_last == 1 ) // <-- NOT SURE ABOUT THIS LOGIC.
+    {
+        // RESET RST_GATE
+        rst_gate = 1 ;
+    }
+
+
+    // ELSE IF UN_INTURUPTED DETECTION
+    else if( ( enc1.read() - prev_enc_one > 10 ) || ( ( enc2.read() * -1 ) - prev_enc_two > 10 ) )
+    {
+        // RESET RST_GATE
+        rst_gate = 1 ;
+
+        // RESET FINAL DETECT
+        out_detect = 0 ;
+
+        // DETERMINE OUT SIGNATURE
+        det_out_sig() ;
+  
+        
+    } // <-- else_if( enc - prev )
+
+
+} // <--- observe_out_bin()
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ______ SUM_BIN_ARAY () ______
+
+void sum_bin_aray()
+{
+
+    // RESET SUM
+    sum_bin = 0 ;
+  
+    // ADD UP ARRAY
+    for ( a = 0 ; a < 13 ; a++ ) 
+    {
+        // READ CURRENT BIN ARAY
+        sum_bin = sum_bin + cur_bin_aray[ a ] ;
+    }
+
+
+} // <-- sum_bin_aray()
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+// ______ DET_IN_SIG () ______
+
+void det_in_sig()
+{
+
+//printout() ; 
+Serial.println( " " ) ;
+Serial.println( "___IN_DET_IN_SIG_()___" ) ;
+// PRINT LIGHT BAR ARRAY VALUES
+Serial.println("[ 0  1  2  3  4  5  6  7  8  9  10 11 12 ]") ;
+Serial.print("[ ") ;
+for ( a = 0 ; a < 13 ; a++ ) 
+{
+    Serial.print( cur_bin_aray[ a ] ) ; 
+    Serial.print("  ") ;    
+}
+
+Serial.println(" ]") ;
+
+    // SUM BIN ARAY
+    sum_bin_aray() ;
+
+
+Serial.print( "  Sum_bin: " ) ;
+Serial.println( sum_bin ) ;
+
+
+    // RESET DECISION
+    decision = 0 ;
+
+
+
+    // RESET FLAGS       <-- THIS FUNCTION COMES BEFORE OUT DETECTION SO IT IS RESONABLE TO RESET THEM HERE.
+    //flag_ln = 0 ; // <-- THIS SHOULD "STICK" UNLESS SOMETHING ELSE IS DETECTED     
+    flag_f = 0 ;
+    flag_de = 0 ;
+    flag_l = 0 ;
+    flag_r = 0 ;
+    flag_t = 0 ;
+    flag_ol = 0 ;
+    flag_or = 0 ;
+    flag_ot = 0 ;
+      
+
+  
+  
+    //                    [ 0  1  2  3  4  5  6  7  8  9  10 11 12 ]
+    // CHECK FOR LINE     [ 0  0  0  X  X  1  X  1  X  X  0  0  0 ]  // <-- NOTE: 5 OR 7
+    if( ( sum_bin <= 4 ) && ( cur_bin_aray[ 0 ] == 0 && cur_bin_aray[ 1 ] == 0 && cur_bin_aray[ 2 ] == 0 && ( cur_bin_aray[ 5 ] == 1  || cur_bin_aray[ 7 ] == 1 ) && cur_bin_aray[ 10 ] == 0 && cur_bin_aray[ 11 ] == 0 && cur_bin_aray[ 12 ] == 0 ) )
+    {
+        // FLAG FOR LINE FOLLOW
+        flag_ln = 1 ;
+
+        
+        // READY FOR DECISION
+        rdy_for_dec = 0 ;
+
+        // AUTOMATICALLY DECIDE TO LINE FOLLOW
+        //decision = 1 ;
+        
+    }
+  
+
+    //                    [ 0  1  2  3  4  5  6  7  8  9  10 11 12 ]
+    // CHECK FOR FINISH   [ 0  0  X  X  1  1  1  1  1  X  X  0  0 ]
+    else if( ( sum_bin >= 3 && sum_bin <= 7 ) && ( cur_bin_aray[ 0 ] == 0 && cur_bin_aray[ 1 ] == 0 && cur_bin_aray[ 4 ] == 1 && cur_bin_aray[ 5 ] == 1 && cur_bin_aray[ 6 ] == 1 && cur_bin_aray[ 7 ] == 1 && cur_bin_aray[ 8 ] == 1 && cur_bin_aray[ 11 ] == 0 && cur_bin_aray[ 12 ] == 0 ) )
+    {
+        // FLAG FOR FINISH
+        flag_f = 1 ;
+
+        // READY FOR DECISION
+        rdy_for_dec = 1 ;
+
+        // RESET LF FLAG
+        flag_ln = 0 ;
+    }
+
+
+// SOMEWHERE WE NEED TO DECLARE A DEFAULT DRIVE FORWARD TO IGNORE THE LN FOLLOW TO MOVE FORWARD. MAYBE THAT CAN HAPPEN BY SIIMPLY TOGGLING OFF THE LN FLAG IF ANOTHER DETECTED. FOR EXAMPLE, A MOVE FORWARD BOOLIAN.
+
+
+
+    //                    [ 0  1  2  3  4  5  6  7  8  9  10 11 12 ]
+    // CHECK FOR DEAD END [ 0  0  0  0  0  0  0  0  0  0  0  0  0 ]
+    else if( cur_bin_aray[ 0 ] == 0 && cur_bin_aray[ 1 ] == 0 && cur_bin_aray[ 3 ] == 0 && cur_bin_aray[ 4 ] == 0 && cur_bin_aray[ 5 ] == 0 && cur_bin_aray[ 6 ] == 0 && cur_bin_aray[ 7 ] == 0 && cur_bin_aray[ 8 ] == 0 && cur_bin_aray[ 9 ] == 0 && cur_bin_aray[ 10 ] == 0 && cur_bin_aray[ 11 ] == 0 && cur_bin_aray[ 12 ] == 0 ) 
+    {
+        // FLAG FOR DEAD END
+        flag_de = 1 ;
+
+        // READY FOR DECISION
+        rdy_for_dec = 1 ;
+
+        // AUTOMATICALLY DECIDE TO TURN_AROUND
+        //decision = 4 ;
+
+        // RESET LF FLAG
+        flag_ln = 0 ;  
+    }
+
+    
+    //                    [ 0  1  2  3  4  5  6  7  8  9  10 11 12 ]
+    // CHECK FOR RIGHT    [ 0  0  0  X  X  X  1  1  1  1  1  1  X ]
+    else if( cur_bin_aray[ 0 ] == 0 && cur_bin_aray[ 1 ] == 0 && cur_bin_aray[ 6 ] == 1 && cur_bin_aray[ 7 ] == 1 && cur_bin_aray[ 8 ] == 1 && cur_bin_aray[ 9 ] == 1 && cur_bin_aray[ 10 ] == 1 && cur_bin_aray[ 11 ] == 1 )
+    {
+        // FLAG FOR RIGHT
+        flag_r = 1 ;
+
+        // OUT INSPECT
+        out_detect = 1 ;
+
+        // RESET LF FLAG
+        flag_ln = 0 ;
+    }
+
+
+    //                    [ 0  1  2  3  4  5  6  7  8  9  10 11 12 ]
+    // CHECK FOR LEFT     [ X  1  1  1  1  1  1  X  X  X  0  0  0 ]
+    else if( cur_bin_aray[ 1 ] == 1 && cur_bin_aray[ 2 ] == 1 && cur_bin_aray[ 3 ] == 1 && cur_bin_aray[ 4 ] == 1 && cur_bin_aray[ 5 ] == 1 && cur_bin_aray[ 6 ] == 1 && cur_bin_aray[ 10 ] == 0 && cur_bin_aray[ 11 ] == 0 && cur_bin_aray[ 12 ] == 0 )
+    {
+        // FLAG FOR LEFT
+        flag_l = 1 ;
+
+        // OUT INSPECT
+        out_detect = 1 ;
+
+        // RESET LF FLAG
+        flag_ln = 0 ;
+    }
+
+
+    //                    [ 0  1  2  3  4  5  6  7  8  9  10 11 12 ]
+    // CHECK FOR TEE      [ X  X  1  1  1  1  1  1  1  1  1  X  X ]
+    else if( cur_bin_aray[ 2 ] == 1 && cur_bin_aray[ 3 ] == 1 && cur_bin_aray[ 4 ] == 1 && cur_bin_aray[ 5 ] == 1 && cur_bin_aray[ 6 ] == 1 && cur_bin_aray[ 7 ] == 1 && cur_bin_aray[ 8 ] == 1 && cur_bin_aray[ 9 ] == 1 && cur_bin_aray[ 10 ] == 1 ) 
+    {
+        // FLAG FOR TEE
+        flag_t = 1 ;
+
+        // OUT INSPECT
+        out_detect = 1 ;
+
+        // RESET LF FLAG
+        flag_ln = 0 ;
+    }
+
+
+    // UNDERTERMINED
+    else 
+    {
+        Serial.println( "  Undetermined " ) ;
+  
+        // HAULT
+        hault = 1 ;
+  
+        // RESET LF FLAG
+        flag_ln = 0 ;
+    }
+
+
+
+Serial.print( "   Ry_dec: " ) ;
+Serial.println( rdy_for_dec ) ;
+Serial.print( "  Decsn: " ) ;
+Serial.println( decision ) ;
+Serial.print( "  Hault: " ) ;
+Serial.println( hault ) ;
+Serial.print( "  FLAG_LN: " ) ;
+Serial.println( flag_ln ) ;
+Serial.print( "  FLAG_DE: " ) ;
+Serial.println( flag_de ) ;
+Serial.print( "  FLAG_R: " ) ;
+Serial.println( flag_r ) ;
+Serial.print( "  FLAG_L: " ) ;
+Serial.println( flag_l ) ;
+Serial.print( "  FLAG_T: " ) ;
+Serial.println( flag_t ) ;
+Serial.print( "  FLAG_OR: " ) ;
+Serial.println( flag_or ) ;
+Serial.print( "  FLAG_OL: " ) ;
+Serial.println( flag_ol ) ;
+Serial.print( "  FLAG_OT: " ) ;
+Serial.println( flag_ot ) ;
+Serial.print( "  FLAG_F: " ) ;
+Serial.println( flag_f ) ;
+
+
+
+
+
+
+} // <--- det_in_sig()
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ______ DET_OUT_SIG () ______     // <-- WE CAN USE THIS BOLLIAN TO DO THE MOVE FORWARD COMMAND IN THE CASES WHERE IT IS NEEDED IN DET_IN_SIG ABOVE.
+
+void det_out_sig()
+{
+
+
+//printout() ; 
+Serial.println( " " ) ;
+Serial.println( "___IN_DET_OUT_SIG_()___" ) ;
+// PRINT LIGHT BAR ARRAY VALUES
+Serial.println("[ 0  1  2  3  4  5  6  7  8  9  10 11 12 ]") ;
+for ( a = 0 ; a < 13 ; a++ ) 
+{
+    Serial.print( cur_bin_aray[ a ] ) ; 
+    Serial.println(" ") ;    
+}
+
+    // SUM BIN ARAY
+    sum_bin_aray() ;    // <-- THIS IS NOT BEING USED?
+
+    // RESET OUT DETECT FLAG
+    out_detect = 0 ;
+
+  
+    //                    [ 0  1  2  3  4  5  6  7  8  9  10 11 12 ]
+    // CHECK FOR DEAD END [ 0  0  0  0  0  0  0  0  0  0  0  0  0 ]
+    if( cur_bin_aray[ 0 ] == 0 && cur_bin_aray[ 1 ] == 0 && cur_bin_aray[ 3 ] == 0 && cur_bin_aray[ 4 ] == 0 && cur_bin_aray[ 5 ] == 0 && cur_bin_aray[ 6 ] == 0 && cur_bin_aray[ 7 ] == 0 && cur_bin_aray[ 8 ] == 0 && cur_bin_aray[ 9 ] == 0 && cur_bin_aray[ 10 ] == 0 && cur_bin_aray[ 11 ] == 0 && cur_bin_aray[ 12 ] == 0 ) 
+    {
+      // DERMINE OUT SIGNATURE
+      if( flag_r == 1 ) flag_dr = 1 ;
+      if( flag_l == 1 ) flag_dl = 1 ;
+      if( flag_t == 1 ) flag_dt = 1 ;
+         
+    }
+
+
+    else 
+    {
+      // DERMINE OUT SIGNATURE
+      if( flag_r == 1 ) flag_or = 1 ;
+      if( flag_l == 1 ) flag_ol = 1 ;
+      if( flag_t == 1 ) flag_ot = 1 ;
+         
+    }
+
+
+    // READY FOR DECISION
+    rdy_for_dec = 1 ;
+
+
+
+
+Serial.print( "  Rdy_f_decsn: " ) ;
+Serial.println( rdy_for_dec ) ;
+Serial.print( "  Hault: " ) ;
+Serial.println( hault ) ;
+Serial.print( "  FLAG_LN: " ) ;
+Serial.println( flag_ln ) ;
+Serial.print( "  FLAG_DE: " ) ;
+Serial.println( flag_de ) ;
+Serial.print( "  FLAG_R: " ) ;
+Serial.println( flag_r ) ;
+Serial.print( "  FLAG_L: " ) ;
+Serial.println( flag_l ) ;
+Serial.print( "  FLAG_T: " ) ;
+Serial.println( flag_t ) ;
+Serial.print( "  FLAG_OR: " ) ;
+Serial.println( flag_or ) ;
+Serial.print( "  FLAG_OL: " ) ;
+Serial.println( flag_ol ) ;
+Serial.print( "  FLAG_OT: " ) ;
+Serial.println( flag_ot ) ;
+Serial.print( "  FLAG_F: " ) ;
+Serial.println( flag_f ) ;
+
+
+  
+
+} // <--- det_out_sig()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ______ DECISION_APLY () ______
+
+void decision_aply()
+{
+
+
+// PRETEND PRINT
+Serial.println( " " ) ;
+Serial.println( "___DICISION_APLY () ____" ) ;
+
+Serial.print( "  Decsn: " ) ;
+Serial.println( decision ) ;
+
+
+    // RESET READY FOR DECISION
+    rdy_for_dec = 0 ;
+
+
+    // TOE HEEL MATCH TWINKY       // MAYBE BETTER CLASIFY THIS WITH THE MOVE COMMANDS
+    twinky_one = enc1.read() ;
+    twinky_two = enc2.read() ;
+
+
+
+
+
+    // PRE_DECISION HOUSE KEEPING
+    if( decision != 0 )
+    {
+        // RELAESE HAULT
+        hault = 0 ;
+    }
+
+
+
+
+
+
+    // IF DECISION IS ZERO HAULT
+    if( decision == 0 ) hault = 1 ;  // <-- DECISION 0 AS HAULT, THAT WAY IT DEFAULTS TO A HAULT IF THE DECISION HAS NOT BEEN UPDATED.
+
+
+
+    // ELSE IF GO STRAIT
+    else if( decision == 1 && ( flag_ln || flag_or || flag_ol || flag_ot ) )
+    {
+
+        // DO NOTHING AND RESET FLAGS
+        flag_or = 0 ;
+        flag_ol = 0 ;
+        flag_ot = 0 ;
+    }
+
+
+
+    // ELSE IF TURN RIGHT
+    else if( decision == 2 && ( flag_r || flag_t ) )
+    {
+
+        // PRETEND PRINT  
+        Serial.println( " " ) ;
+        Serial.println( "    TURNING RIGHT" ) ;
+        
+        // RESET FLAGS    <-- THESE ARE THE ONLY FLAGS THAT COULD BE ON THAT IS WHY THEY ARE THE ONLY ONES BEING RESET.
+        flag_or = 0 ;
+        flag_ot = 0 ;
+        
+        //go_r_move = 1 ;   // <-- WHERE DO ALL OF THESE COMMANDS GET USED?
+  
+        // DELAY FOR MOVE BY HAND
+        delay( 5000 ) ;
+  
+        // PRETEND PRINT
+        Serial.println( " " ) ;
+        Serial.println( "    TR_COMPLETE" ) ;
+  
+        // USE UP DECISION BACK TO NUTRAL
+        decision = 1 ;     
+    }
+
+
+    // ELSE IF TURN LEFT
+    else if( decision == 3 && ( flag_l || flag_t ) )
+    {
+      
+        // PRETEND PRINT
+        Serial.println( " " ) ;
+        Serial.println( "    TURNING LEFT" ) ;
+        
+        // RESET FLAGS    <-- THESE ARE THE ONLY FLAGS THAT COULD BE ON THAT IS WHY THEY ARE THE ONLY ONES BEING RESET.
+        flag_ol = 0 ;
+        flag_ot = 0 ;
+        
+        //go_l_move = 1 ;
+  
+        // DELAY FOR MOVE BY HAND
+        delay( 5000 ) ;
+  
+        // PRETEND PRINT
+        Serial.println( " " ) ;
+        Serial.println( "    TL_COMPLETE" ) ;
+
+        // USE UP DECISION BACK TO NUTRAL
+        decision = 1 ;
+    }
+
+
+
+    // ELSE IF TURN AROUND
+    else if( decision == 4 )
+    {
+  
+        // PRETEND PRINT
+        Serial.println( " " ) ;
+        Serial.println( "    TURNING AROUND" ) ;
+        
+        //go_d_move = 1 ;
+  
+        // DELAY FOR MOVE BY HAND
+        delay( 5000 ) ;
+  
+        // PRETEND PRINT
+        Serial.println( " " ) ;
+        Serial.println( "    TU_COMPLETE" ) ;
+
+        // USE UP DECISION BACK TO NUTRAL
+        decision = 1 ;
+    }
+
+
+    // ELSE IF FINISH
+    else if( decision == 5 && flag_f ) // <-- DONT WASTE TIME IMPLIMENTING THIS UNTIL ALL ELSE IS DONE.
+    {
+        // PRETEND PRINT
+        Serial.println( " " ) ;
+        Serial.println( "    FINISH" ) ;
+        
+        //go_f_move = 1 ;
+        //hault = 1 ;  
+  
+        // DELAY FOR MOVE BY HAND
+        delay( 5000 ) ;
+  
+        // PRETEND PRINT
+        Serial.println( " " ) ;
+        Serial.println( "    F_COMPLETE" ) ;
+
+        // USE UP DECISION BACK TO NUTRAL
+        decision = 1 ;
+    }
+
+
+    else 
+    {
+        // HOLD FOR PROPER DECISION     <-- I DON'T THINK THIS IS NEEDED BECAUSE IT WILL HOLD THE TURN FLAGS UNTIL 10 ENCODER TICKS PASSES, AT WHICH POINT IT WILL THEN CALL DET_IN_SIG AND RESET THE FLAGS.
+        //decision_hold = 1 ;
+  
+        // HAULT
+        hault =  1 ;   // <-- NOTE: THE OR OL OT FLAGS DO NOT GET RESET BECAUSE WE ARE WAITING FOR COMMAND. 
+  
+        // IF THE PLACE ON THE MAP DOES NOT ACOMMODATE THE COMMAND
+        Serial.println( " " ) ;
+        Serial.println( " I am disinclined to aquest that request. " ) ;
+      
+    }
+
+
+
+
+Serial.print( "  Hault: " ) ;
+Serial.println( hault ) ;
+Serial.print( "  FLAG_LN: " ) ;
+Serial.println( flag_ln ) ;
+Serial.print( "  FLAG_DE: " ) ;
+Serial.println( flag_de ) ;
+Serial.print( "  FLAG_R: " ) ;
+Serial.println( flag_r ) ;
+Serial.print( "  FLAG_L: " ) ;
+Serial.println( flag_l ) ;
+Serial.print( "  FLAG_T: " ) ;
+Serial.println( flag_t ) ;
+Serial.print( "  FLAG_OR: " ) ;
+Serial.println( flag_or ) ;
+Serial.print( "  FLAG_OL: " ) ;
+Serial.println( flag_ol ) ;
+Serial.print( "  FLAG_OT: " ) ;
+Serial.println( flag_ot ) ;
+Serial.print( "  FLAG_F: " ) ;
+Serial.println( flag_f ) ;
+
+
+
+
+
+    // USE UP DECISION BACK TO NUTRAL
+    //decision = 1 ;
+
+
+
+// NOTE: UNUSED FLAGS MAY NOT GET RECET?  <-- ALL FLAGS GET RESET FOR IN_DETECTION
+
+
+
+
+} // <--- decision_aply()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ______ DESICION_RESV () ______
+
+void decision_recv()
+{
+  
+// PRETEND PRINT
+Serial.println( " " ) ;
+Serial.println( "___IN_DISC_RESV ()___" ) ;
+Serial.println( "...waiting for input..." ) ;
+    // CHECK FOR SERIAL
+    while ( Serial.available() == 0 )
+    {
+      // DO NOTHING
+      hault = 1 ;   // <-- IT WILL BE INTERESTING TO SEE HOW THIS IS HANDLED, SPECIFIACALLY HOW IT IS SET BACK TO ZERO.
+    } 
+    
+    
+    if( Serial.available() > 0 )
+    {
+        // GRAB INCOMING CHARACTERS
+        char incomingCharacter = Serial.read() ;
+        
+Serial.print( "  Msg recieved:" ) ;   
+Serial.println( incomingCharacter ) ; 
+     
+        // PICK ACTION ACORDING TO CHAR 
+        switch ( incomingCharacter ) 
+        {
+        
+            case '1':
+            decision = 1 ; 
+            break;
+            
+            
+            case '2':
+            decision = 2 ;
+            break;
+            
+            
+            case '3':
+            decision = 3 ;
+            break;
+            
+            
+            case '4':
+            decision = 4 ;
+            break;
+            
+            
+            case '5':
+            decision = 5 ;
+            break;
+            
+            
+            case '6':
+            decision = 6 ;
+            break;
+            
+        
+        } // <-- switch ()
+    
+    
+    } // <-- if()
+
+
+
+} // <--- decision_check()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+// ______ PID VL CONTROL () ______
+
+void pid_vl_control()
+{
+  
+    // NORMAL LINE FOLLOW
+    if( d_mv_latch == 0 && rt_initial_detect == 0 && rt_initial_latch == 0 && rt_move_latch == 0 ) 
+    {
+        twinky_one = twinky_one + ( millis() - prev_twinky_time ) * twinky_one_speed ;  
+        twinky_two = twinky_two + ( millis() - prev_twinky_time ) * twinky_two_speed ;
+    }
+    
+    // ELSE IF DEAD_END MOVE
+    else if( d_mv_latch == 1 )
+    { 
+
+        // IF FWD TURN IS NOT COMPLETE
+        if ( d_mv_fwd_one_cmplt == 0 || d_mv_fwd_two_cmplt == 0 )
+        {
+            // TURN WHEEL ONE FORWARD A SPECIFIC AMOUNT
+            if( ( twinky_one - ( twinky_one_d + 360 ) ) < 0 ) twinky_one = twinky_one + ( millis() - prev_twinky_time ) * twinky_one_speed ;  
+            else 
+            {
+              // UPDATE POSITION
+              twinky_one_d = twinky_one ;
+
+              // UPDATE GATE FLAG
+              d_mv_fwd_one_cmplt = 1 ;
+            }
+
+            // TURN WHEEL TWO FORWARD A SPECIFIC AMOUNT
+            if( ( twinky_two - ( twinky_two_d + 360 ) ) < 0 ) twinky_two = twinky_two + ( millis() - prev_twinky_time ) * twinky_two_speed ;
+            else 
+            {
+              // UPDATE POSITION
+              twinky_two_d = twinky_two ;
+
+              // UPDATE GATE FLAG
+              d_mv_fwd_two_cmplt = 1 ;
+            }
+            
+        } // <-- if(d_fwd_I && d_fwd_II)
+
+
+        // IF ROTATION IS NOT COMPLETE
+        if ( ( d_mv_rot_one_cmplt == 0 || d_mv_rot_two_cmplt == 0 ) && ( d_mv_fwd_one_cmplt == 1 && d_mv_fwd_two_cmplt == 1 ) )
+        {
+            // TURN WHEEL ONE FORWARD A SPECIFIC AMOUNT
+            if( ( twinky_one - ( twinky_one_d + 450 ) ) < 0 ) twinky_one = twinky_one + ( millis() - prev_twinky_time ) * twinky_one_speed ;  
+            else d_mv_rot_one_cmplt = 1 ;
+
+            // TURN WHEEL TWO BACKWARDS A SPECIFIC AMOUNT
+            if( ( twinky_two - ( twinky_two_d - 450 ) ) > 0 ) twinky_two = twinky_two - ( millis() - prev_twinky_time ) * twinky_two_speed ;
+            else d_mv_rot_two_cmplt = 1 ;
+
+     
+            // IF COMPLETE RESET GATE FLAGS
+            if( ( d_mv_rot_one_cmplt == 1 ) && ( d_mv_rot_two_cmplt == 1 ) )
+            {
+   
+                d_mv_latch = 0 ;
+                d_enc_cupon = 1 ;
+            }              
+            
+        } // <-- if(d_mv_cmplt)
+        
+    } // <-- else if(d_dect)
+
+
+
+
+
+
+
+
+
+
+
+
+
+    // ELSE IF RT MOVE
+    else if( rt_initial_detect == 1 || rt_initial_latch == 1 || rt_move_latch == 1 )
+    { 
+
+        //Serial.print( "   IN_RT_M   " ) ;
+
+        // IF RT DETECT KEEP STRAIGHT
+        if( ( rt_initial_detect == 1 || rt_initial_latch == 1 ) && ( rt_move_latch == 0 ) )
+        {
+
+
+            // KEEP STRAIGHT
+            twinky_one = twinky_one + ( millis() - prev_twinky_time ) * twinky_one_speed_const ;
+            twinky_two = twinky_two + ( millis() - prev_twinky_time ) * twinky_two_speed_const ;
+
+          
+        } // <-- if(go rt)
+
+
+        // ELSE IF GO FOR RT
+        if( rt_move_latch == 1 )
+        {
+
+            // MANUALLY MOVE FORWARD A CERTAIN DISTANCE
+            // IF FWD TURN IS NOT COMPLETE
+            if ( rt_mv_fwd_one_cmplt == 0 || rt_mv_fwd_two_cmplt == 0 )
+            {
+                // TURN WHEEL ONE FORWARD A SPECIFIC AMOUNT
+                if( enc1.read() - rt_enc_one_final_detect < 180 ) twinky_one = twinky_one + ( millis() - prev_twinky_time ) * twinky_one_speed ;  
+                else 
+                {
+                  // UPDATE POSITION
+                  rt_enc_one_final_detect_update = enc1.read() ;
+    
+                  // UPDATE GATE FLAG
+                  rt_mv_fwd_one_cmplt = 1 ;
+                }
+    
+                // TURN WHEEL TWO FORWARD A SPECIFIC AMOUNT
+                if( ( enc2.read() * -1 ) - rt_enc_two_final_detect < 180 ) twinky_two = twinky_two + ( millis() - prev_twinky_time ) * twinky_two_speed ;
+                else 
+                {
+                  // UPDATE POSITION
+                  rt_enc_two_final_detect_update = ( enc2.read() * -1 ) ;
+    
+                  // UPDATE GATE FLAG
+                  rt_mv_fwd_two_cmplt = 1 ;
+
+                  //Serial.print( "   IN_FWD2_CPT   " ) ;
+                }
+                
+            } // <-- if(d_fwd_I && d_fwd_II)
+
+
+    
+            // IF ROTATION IS NOT COMPLETE
+            if ( ( rt_mv_rot_one_cmplt == 0 || rt_mv_rot_two_cmplt == 0 ) && ( rt_mv_fwd_one_cmplt == 1 && rt_mv_fwd_two_cmplt == 1 ) )
+            {
+                // TURN WHEEL ONE FORWARD A SPECIFIC AMOUNT
+                if( enc1.read() - rt_enc_one_final_detect_update < 180 ) twinky_one = twinky_one + ( millis() - prev_twinky_time ) * twinky_one_speed ;  
+                else rt_mv_rot_one_cmplt = 1 ;
+    
+                // TURN WHEEL TWO BACKWARDS A SPECIFIC AMOUNT
+                if( ( enc2.read() * -1 ) - rt_enc_two_final_detect_update > -180 ) twinky_two = twinky_two - ( millis() - prev_twinky_time ) * twinky_two_speed ;
+                else rt_mv_rot_two_cmplt = 1 ;
+    
+         
+                // IF COMPLETE RESET GATE FLAGS
+                if( ( rt_mv_rot_one_cmplt == 1 ) && ( rt_mv_rot_two_cmplt == 1 ) )
+                {
+
+                   // UPDATE GATE FLAG
+                    rt_wheel_one_mv_complt = 0 ;
+  
+                    // REMOVE RT MOVE LATCH
+                    rt_move_latch = 0 ;
+  
+                    // RESET RT DETECT CONDITIONS
+                    rt_enc_cupon = 1 ;
+                    rt_initial_detect = 0 ;
+                    rt_initial_latch = 0 ;
+                    rt_final_detect = 0 ;
+                    rt_position_final_gate = 1 ;
+                    rtd_detect = 0 ;
+                    rt_mv_rot_one_cmplt = 0 ;
+                    rt_mv_rot_two_cmplt = 0 ;
+                    rt_mv_fwd_one_cmplt = 0 ;
+                    rt_mv_fwd_two_cmplt = 0 ;       
+     
+                }              
+                
+            } // <-- if(d_mv_cmplt)
+
+          
+        } // <-- if(go rt)
+
+
+    } // <-- else if(rt dect or latch)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+    // GRAB FEEDBACK TICKS
+    whl_1_vl_PID_feedback = enc1.read() ;
+    whl_2_vl_PID_feedback = enc2.read() * -1 ;
+  
+    // COMPUTE PID VL OUTPUT
+    whl_1_vl_PID_calc() ;
+    whl_2_vl_PID_calc() ;
+  
+    // COMMAND MOTORS
+    command_motors() ;
+
+
+} // <-- pid_vl_control()
+
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ______ PID LF CONTROL () ______
+
+void pid_lf_control()
+{
+
+
+        // CALCULATE LINE ERROR RAW VALUE
+        line_error_calc() ;
+
+        // COMPUTE PID LF OUTPUT
+        line_lf_PID_calc() ;
+        
+        // SUBTRACT TWINKY SPEED FOR RIGHT WHEEL M2
+        if( line_lf_PID_out >= 0 ) twinky_two_speed = twinky_max - line_lf_PID_out ;
+
+        // SUBTRACT TWINKY SPEEED FOR LEFT WHEEL M1
+        else twinky_one_speed = twinky_max - ( line_lf_PID_out * -1 ) ;
+/*
+        // OVERRIDE FOR SPECIAL CASE OF DEAD_END TURN AROUND
+        if( d_mv_latch == 1 ) twinky_two_speed = twinky_max ;
+        if( d_mv_latch == 1 ) twinky_one_speed = twinky_max ;
+        if( rt_move_latch == 1 ) twinky_one_speed = twinky_one_speed_const ;
+        if( rt_move_latch == 1 ) twinky_two_speed = twinky_two_speed_const ;
+*/        
+          
+
+
+} // <-- pid_lf_control()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ______ LINE LF PID CALC () ______
+
+void line_lf_PID_calc()
+{
+
+    // PROPORTIONAL
+    line_lf_PID_P = line_error * line_lf_PID_KP ;
+
+    
+    // INTEGRAL
+    line_lf_PID_I = line_lf_PID_I + line_error * line_lf_PID_KI ;
+    if( line_lf_PID_I > 255 ) line_lf_PID_I = 255 ;
+    if( line_lf_PID_I < -255 ) line_lf_PID_I = -255 ;
+
+    
+    // DERIVATIVE
+    line_lf_PID_D = ( ( line_error - line_lf_PID_err_prev ) / (float)( millis() - line_lf_PID_D_time_prev ) ) * line_lf_PID_KD ;
+    line_lf_PID_err_prev = line_lf_PID_D ;
+    line_lf_PID_D_time_prev = millis () ;
+
+
+    // SUMMATION
+    line_lf_PID_out = line_lf_PID_P + line_lf_PID_I + line_lf_PID_D ;
+    if( line_lf_PID_out > twinky_max ) line_lf_PID_out = twinky_max ;
+    if( line_lf_PID_out < twinky_min ) line_lf_PID_out = twinky_min ;    
+    
+
+} // <-- line_lf_PID_calc()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ______ WHL 1 VL PID CALC () ______
+
+void whl_1_vl_PID_calc()
+{
+
+    // ERROR
+    whl_1_vl_PID_err = twinky_one - whl_1_vl_PID_feedback ;
+
+
+    // PROPORTIONAL
+    whl_1_vl_PID_P = whl_1_vl_PID_err * whl_1_vl_PID_KP ;
+
+    
+    // INTEGRAL
+    whl_1_vl_PID_I = whl_1_vl_PID_I + whl_1_vl_PID_err * whl_1_vl_PID_KI ;
+    if( whl_1_vl_PID_I > 255 ) whl_1_vl_PID_I = 255 ;
+    if( whl_1_vl_PID_I < -255 ) whl_1_vl_PID_I = -255 ;
+
+    
+    // DERIVATIVE
+    whl_1_vl_PID_D = ( ( whl_1_vl_PID_err - whl_1_vl_PID_err_prev ) / (float)( millis() - whl_1_vl_PID_D_time_prev ) ) * whl_1_vl_PID_KD ;
+    whl_1_vl_PID_err_prev = whl_1_vl_PID_D ;
+    whl_1_vl_PID_D_time_prev = millis () ;
+
+
+    // SUMMATION
+    whl_1_vl_PID_out = whl_1_vl_PID_P + whl_1_vl_PID_I + whl_1_vl_PID_D ;
+    if( whl_1_vl_PID_out > 255 ) whl_1_vl_PID_out = 255 ;
+    if( whl_1_vl_PID_out < -255 ) whl_1_vl_PID_out = -255 ;    
+    
+
+} // <-- whl_1_vl_PID_calc()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ______ WHL 2 VL PID CALC () ______
+
+void whl_2_vl_PID_calc()
+{
+
+    // ERROR
+    whl_2_vl_PID_err = twinky_two - whl_2_vl_PID_feedback ;
+
+
+    // PROPORTIONAL
+    whl_2_vl_PID_P = whl_2_vl_PID_err * whl_2_vl_PID_KP ;
+
+    
+    // INTEGRAL
+    whl_2_vl_PID_I = whl_2_vl_PID_I + whl_2_vl_PID_err * whl_2_vl_PID_KI ;
+    if( whl_2_vl_PID_I > 255 ) whl_2_vl_PID_I = 255 ;
+    if( whl_2_vl_PID_I < -255 ) whl_2_vl_PID_I = -255 ;
+
+    
+    // DERIVATIVE
+    whl_2_vl_PID_D = ( ( whl_2_vl_PID_err - whl_2_vl_PID_err_prev ) / (float)( millis() - whl_2_vl_PID_D_time_prev ) ) * whl_2_vl_PID_KD ;
+    whl_2_vl_PID_err_prev = whl_2_vl_PID_D ;
+    whl_2_vl_PID_D_time_prev = millis () ;
+
+
+    // SUMMATION
+    whl_2_vl_PID_out = whl_2_vl_PID_P + whl_2_vl_PID_I + whl_2_vl_PID_D ;
+    if( whl_2_vl_PID_out > 255 ) whl_2_vl_PID_out = 255 ;
+    if( whl_2_vl_PID_out < -255 ) whl_2_vl_PID_out = -255 ;    
+    
+
+} // <-- whl_2_vl_PID_calc()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// _________ SERIAL INPUT () _________
+
+void serial_input()
+{
+
+    // CHECK FOR SERIAL
+    while (Serial.available() > 0) 
+    {
+        // GRAB INCOMING CHARACTERS
+        char incomingCharacter = Serial.read() ;
+
+       // PICK ACTION ACORDING TO CHAR 
+       switch (incomingCharacter) 
+       {
+
+          // INCREASE Kp
+          case '1':
+              //whl_1_vl_PID_KP = whl_1_vl_PID_KP + 0.05 ;
+              line_lf_PID_KP = line_lf_PID_KP + 0.0005 ;
+          break;
+
+
+          // DECREASE Kp
+          case '2':
+              //whl_1_vl_PID_KP = whl_1_vl_PID_KP - 0.05 ;
+              line_lf_PID_KP = line_lf_PID_KP - 0.0005 ;
+          break;
+
+
+
+
+
+          // INCREASE Ki
+          case '3':
+              //whl_1_vl_PID_KI = whl_1_vl_PID_KI + 0.005 ;
+              line_lf_PID_KI = line_lf_PID_KI + 0.00005 ;
+          break;
+
+
+          // DECREASE Ki
+          case '4':
+              //whl_1_vl_PID_KI = whl_1_vl_PID_KI - 0.005 ;
+              line_lf_PID_KI = line_lf_PID_KI - 0.00005 ;
+          break;
+
+
+
+
+
+          // INCREASE Kd
+          case '5':
+              //whl_1_vl_PID_KD = whl_1_vl_PID_KD + 0.5 ;
+              line_lf_PID_KD = line_lf_PID_KD + 0.5 ;
+          break;
+
+
+          // DECREASE Kp
+          case '6':
+              //whl_1_vl_PID_KD = whl_1_vl_PID_KD - 0.5 ;
+              line_lf_PID_KD = line_lf_PID_KD - 0.5 ;
+          break;
+
+          
+        } // <-- switch ()
+
+    } // <-- while()
+
+} // <--- serial_input()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ______ LINE ERROR CALC () ______
+
+void line_error_calc()
+{
+
+    // READ IN LIGHT VALUES
+    light_sensor_read() ;
+  
+    // ZERO-OUT SUMS
+    light_values_left_sum = 0 ;
+    light_values_right_sum = 0 ;
+   
+    // ADD UP LEFT SIDE
+    for ( a = 0 ; a < 6 ; a++ ) light_values_left_sum = light_values_left_sum + light_values[ a ] ;   
+  
+    // ADD UP RIGHT SIDE
+    for ( a = 7 ; a < 13 ; a++ ) light_values_right_sum = light_values_right_sum + light_values[ a ] ;
+  
+    // CALCULATE ERROR
+    line_error = light_values_left_sum - light_values_right_sum ;
+
+
+} // <-- line_error()
+
+
+
+
+
+
+
+
+
+
+
+
+
+void light_sensor_read()
+{
+
+    // LOCAL VARIABLES 
+    int adc1_buf[8] ;
+    int adc2_buf[8] ;
+  
+  
+    // READ IN VALUES
+    for ( a = 0 ; a < 8 ; a++ ) 
+    {
+        adc1_buf[ a ] = adc1.readADC( a ) ;
+        adc2_buf[ a ] = adc2.readADC( a ) ;   
+    }
+ 
+  
+    // COMBINE INTO ONE ARRAY
+    light_values[ 12 ] = adc1_buf[ 0 ] ;
+    light_values[ 11 ] = adc2_buf[ 0 ] ;
+    light_values[ 10 ] = adc1_buf[ 1 ] ;
+    light_values[ 9 ] = adc2_buf[ 1 ] ;
+    light_values[ 8 ] = adc1_buf[ 2 ] ;
+    light_values[ 7 ] = adc2_buf[ 2 ] ;
+    light_values[ 6 ] = adc1_buf[ 3 ] ;
+    light_values[ 5 ] = adc2_buf[ 3 ] ;
+    light_values[ 4 ] = adc1_buf[ 4 ] ;
+    light_values[ 3 ] = adc2_buf[ 4 ] ;
+    light_values[ 2 ] = adc1_buf[ 5 ] ;
+    light_values[ 1 ] = adc2_buf[ 5 ] ;
+    light_values[ 0 ] = adc1_buf[ 6 ] ;
+
+
+} // <-- light_sensor_read()
+
+
+
+
+
+
+
+
+
+
+
+
+// _________ COMMAND MOTORS () _________
+
+void command_motors()
+{
+  
+    // IF PID_1 FORWARD    
+    if ( whl_1_vl_PID_out >= 0 ) 
+    {
+        analogWrite( M1_IN_1 , 0 ) ;
+        analogWrite( M1_IN_2 , 0 /*whl_1_vl_PID_out*/ ) ;
+        //analogWrite( M1_IN_2 , whl_1_vl_PID_out ) ;
+    }
+    
+    // IF PID_1 REVERSE
+    else
+    {
+        analogWrite( M1_IN_1 , 0 /*whl_1_vl_PID_out * -1*/ ) ;
+        //analogWrite( M1_IN_1 , whl_1_vl_PID_out * -1 ) ;// <-- ONE MUST HARD-CODE FLIP THE MAGNITUDE OF THE PWM INTO POSITIVE BECAUSE THE PWM RANGE IS 0 --> 255 (ALL POSITIVE).
+        analogWrite( M1_IN_2 , 0 ) ;  
+    }
+
+  
+  
+  
+    // IF PID_2 FORWARD    
+    if ( whl_2_vl_PID_out >= 0 ) 
+    {
+        analogWrite( M2_IN_1 , 0 ) ;
+        analogWrite( M2_IN_2 , 0 /*whl_2_vl_PID_out*/ ) ;
+        //analogWrite( M2_IN_2 , whl_2_vl_PID_out ) ;
+    }
+    
+    // IF PID_2 REVERSE
+    else
+    {
+        analogWrite( M2_IN_1 , 0 /*whl_2_vl_PID_out * -1*/ ) ;
+        //analogWrite( M2_IN_1 , whl_2_vl_PID_out * -1 ) ;
+        analogWrite( M2_IN_2 , 0 ) ;  // <-- ONE MUST HARD-CODE FLIP THE MAGNITUDE OF THE PWM INTO POSITIVE BECAUSE THE PWM RANGE IS 0 --> 255 (ALL POSITIVE).
+    }
+
+
+} // <--- command_motors()
+
+
+
+
+
+
+
+
+
+
+
+
+
+// _________ PRINTOUT () _________
+
+void printout()
+{
+
+
+    Serial.println() ;
+    
+/*
+  // PRINT LIGHT BAR ARRAY VALUES
+  for ( a = 0 ; a < 13 ; a++ ) 
+  {
+      Serial.print( light_values_bin[ a ] ) ; 
+      Serial.print("   ") ;    
+  }
+*/
+
+    //Serial.println() ;
+
+
+/*
+
+    // PRINT
+    Serial.print( "    rt_int_detect: " ) ; 
+    Serial.print( rt_initial_detect ) ; 
+
+
+    // PRINT
+    Serial.print( "    rt_int_lch: " ) ; 
+    Serial.print( rt_initial_latch ) ; 
+
+
+    // PRINT
+    Serial.print( "    rt_cpn: " ) ; 
+    Serial.print( rt_enc_cupon ) ; 
+
+
+    // PRINT
+    Serial.print( "    rt_fn_detect: " ) ; 
+    Serial.print( rt_final_detect ) ; 
+
+
+    // PRINT
+    Serial.print( "    go_for_st: " ) ; 
+    Serial.print( go_for_st ) ; 
+
+
+    // PRINT
+    Serial.print( "    go_for_rt: " ) ; 
+    Serial.print( go_for_rt ) ; 
+
+
+    // PRINT
+    Serial.print( "    rt_mv_latch: " ) ; 
+    Serial.print( rt_move_latch ) ; 
+
+
+    // PRINT
+    Serial.print( "    rt_wh1_fwd_cpt: " ) ; 
+    Serial.print( rt_mv_fwd_one_cmplt ) ; 
+    
+    
+    // PRINT
+    Serial.print( "    rt_wh2_fwd_cpt: " ) ; 
+    Serial.print( rt_mv_fwd_two_cmplt ) ; 
+
+
+    // PRINT
+    Serial.print( "    rt_wh1_rot_cpt: " ) ; 
+    Serial.print( rt_mv_rot_one_cmplt ) ; 
+    
+    
+    // PRINT
+    Serial.print( "    rt_wh2_rot_cpt: " ) ; 
+    Serial.print( rt_mv_rot_two_cmplt ) ; 
+
+
+    // PRINT
+    Serial.print( "    Enc1: " ) ; 
+    Serial.print( enc1.read() ) ; 
+
+
+    // PRINT
+    Serial.print( "    Enc2: " ) ; 
+    Serial.print( enc2.read() * -1 ) ; 
+
+
+    // PRINT
+    Serial.print( "    t_one: " ) ; 
+    Serial.print( twinky_one ) ; 
+
+
+    // PRINT
+    Serial.print( "    t_two: " ) ; 
+    Serial.print( twinky_two ) ; 
+
+    
+    // PRINT
+    Serial.print( "     whl_1_PID_out: " ) ; 
+    Serial.print( whl_1_vl_PID_out, 2 ) ; 
+
+
+    // PRINT
+    Serial.print( "     whl_2_PID_out: " ) ; 
+    Serial.print( whl_2_vl_PID_out, 2 ) ; 
+
+
+    // PRINT
+    Serial.print( "    whl2_math: " ) ; 
+    Serial.print( ( enc2.read() * -1 ) - rt_enc_two_final_detect_update ) ; 
+*/
+
+/*
+
+    // PRINT
+    Serial.print( "    rt_whl_one_compt: " ) ; 
+    Serial.print( rt_wheel_one_mv_complt ) ; 
+
+
+    // PRINT
+    Serial.print( "    rt_fin_pos_gate: " ) ; 
+    Serial.print( rt_position_final_gate ) ; 
+
+
+    // PRINT
+    Serial.print( "    rt_enc_one_int: " ) ; 
+    Serial.print( rt_enc_one_initial ) ; 
+
+
+    // PRINT
+    Serial.print( "    rt_enc_two_int: " ) ; 
+    Serial.print( rt_enc_two_initial ) ; 
+
+
+    // PRINT
+    Serial.print( "    rt_enc_one_fin: " ) ; 
+    Serial.print( rt_enc_one_final_detect ) ; 
+
+
+    // PRINT
+    Serial.print( "    rt_enc_two_fin: " ) ; 
+    Serial.print( rt_enc_two_final_detect ) ; 
+*/
+    
+
+
+
+
+
+
+
+
+/*
+
+    // PRINT
+    Serial.print( "    d_detected: " ) ; 
+    Serial.print( d_detected ) ; 
+
+
+    // PRINT
+    Serial.print( "    d_mv_latch: " ) ; 
+    Serial.print( d_mv_latch ) ; 
+
+
+    // PRINT
+    Serial.print( "    d_enc_cupon: " ) ; 
+    Serial.print( d_enc_cupon ) ; 
+
+
+    // PRINT
+    Serial.print( "    d_mv_cmplt: " ) ; 
+    Serial.print( d_mv_cmplt ) ; 
+
+
+    // PRINT
+    Serial.print( "    d_mv_fwd_one_cmplt: " ) ; 
+    Serial.print( d_mv_fwd_one_cmplt ) ; 
+
+
+    // PRINT
+    Serial.print( "    d_mv_fwd_two_cmplt: " ) ; 
+    Serial.print( d_mv_fwd_two_cmplt ) ; 
+
+
+    // PRINT
+    Serial.print( "    d_mv_rot_one_cmplt: " ) ; 
+    Serial.print( d_mv_rot_one_cmplt ) ; 
+
+
+    // PRINT
+    Serial.print( "    d_mv_rot_two_cmplt: " ) ; 
+    Serial.print( d_mv_rot_two_cmplt ) ; 
+    
+
+    // PRINT
+    Serial.print( "    enc1 - d_prev: " ) ; 
+    Serial.print( enc1.read() - d_enc_one_prev ) ; 
+
+
+    // PRINT
+    Serial.print( "    enc2 - d_prev: " ) ; 
+    Serial.print( enc2.read() - d_enc_two_prev ) ; 
+
+
+    // PRINT
+    Serial.print( "    t_one_math: " ) ; 
+    Serial.print( twinky_one - ( twinky_one_d + 450 ) ) ; 
+
+
+    // PRINT
+    Serial.print( "    t_two_math: " ) ; 
+    Serial.print( twinky_two - ( twinky_two_d - 450 ) ) ; 
+
+
+    // PRINT
+    Serial.print( "    t_one: " ) ; 
+    Serial.print( twinky_one ) ; 
+
+
+    // PRINT
+    Serial.print( "    t_two: " ) ; 
+    Serial.print( twinky_two ) ; 
+
+*/
+
+
+/*
+
+    // PRINT
+    Serial.print( "    one_spd: " ) ; 
+    Serial.print( twinky_one_speed ) ; 
+
+
+    // PRINT
+    Serial.print( "    two_spd: " ) ; 
+    Serial.print( twinky_two_speed ) ; 
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+/*
+
+    // PRINT
+    //Serial.print( " tick_count: " ) ; 
+    //Serial.print( enc1.read() ) ; 
+
+   
+    // PRINT
+    //Serial.print( "       whl_1_vl_set: " ) ; 
+    //Serial.print( whl_1_vl_setpoint, 3 ) ; 
+
+  
+    // PRINT
+    //Serial.print( "       whl_1_vl_in: " ) ; 
+    //Serial.print( whl_1_vl_feedback, 3 ) ; 
+
+
+    // PRINT
+    //Serial.print( "       whl_2_vl_in: " ) ; 
+    //Serial.print( whl_2_vl_feedback, 3 ) ;
+
+
+
+*/
+
+
+
+
+
+
+
+
+/*
+    // PRINT
+    Serial.print( "       whl_1_vl_Kp: " ) ; 
+    Serial.print( whl_1_vl_Kp , 4 ) ; 
+
+
+    // PRINT
+    Serial.print( "       whl_1_vl_Ki: " ) ; 
+    Serial.print( whl_1_vl_Ki , 4 ) ; 
+
+
+    // PRINT
+    Serial.print( "       whl_1_vl_Kd: " ) ; 
+    Serial.print( whl_1_vl_Kd , 8 ) ; 
+*/
+
+/*
+
+
+    // PRINT
+    Serial.print( "     twy_one: " ) ; 
+    Serial.print( twinky_one ) ; 
+
+    
+    // PRINT
+    Serial.print( "     twy_one_spd: " ) ; 
+    Serial.print( twinky_one_speed ) ; 
+
+
+        // PRINT
+    Serial.print( "     twy_two: " ) ; 
+    Serial.print( twinky_two ) ; 
+
+    
+    // PRINT
+    Serial.print( "     twy_two_spd: " ) ; 
+    Serial.print( twinky_two_speed ) ; 
+
+
+
+    // PRINT
+    Serial.print( "     err_PID_v1: " ) ; 
+    Serial.print( whl_1_vl_PID_err, 2 ) ; 
+
+
+    // PRINT
+    Serial.print( "     err_PID_v2: " ) ; 
+    Serial.print( whl_2_vl_PID_err, 2 ) ; 
+
+
+    // PRINT
+    Serial.print( "     err_line: " ) ; 
+    Serial.print( line_error ) ; 
+*/
+
+/*    
+    // PRINT
+    Serial.print( "     err_v2: " ) ; 
+    Serial.print( whl_2_vl_setpoint - whl_2_vl_feedback, 1 ) ; 
+*/
+
+/*
+    // PRINT
+    Serial.print( "     whl_1_PID_out: " ) ; 
+    Serial.print( whl_1_vl_PID_out, 2 ) ; 
+
+
+
+    // PRINT
+    Serial.print( "     whl_2_PID_out: " ) ; 
+    Serial.print( whl_2_vl_PID_out, 2 ) ; 
+
+
+
+    // PRINT
+    Serial.print( "     line_lf_PID_out: " ) ; 
+    Serial.print( line_lf_PID_out, 2 ) ; 
+
+
+
+
+
+    // PRINT
+    Serial.print( "     line_lf_PID_P: " ) ; 
+    Serial.print( line_lf_PID_P, 2 ) ; 
+
+
+    // PRINT
+    Serial.print( "     line_lf_PID_I: " ) ; 
+    Serial.print( line_lf_PID_I, 2 ) ; 
+
+
+    // PRINT
+    Serial.print( "     line_lf_PID_D: " ) ; 
+    Serial.print( line_lf_PID_D, 2 ) ; 
+
+
+    // PRINT
+    Serial.print( "     line_lf_KP: " ) ; 
+    Serial.print( line_lf_PID_KP , 4 ) ; 
+
+
+    // PRINT
+    Serial.print( "     line_lf_KI: " ) ; 
+    Serial.print( line_lf_PID_KI , 4 ) ; 
+
+
+    // PRINT
+    Serial.print( "     line_lf_KD: " ) ; 
+    Serial.print( line_lf_PID_KD , 8 ) ; 
+
+*/
+
+
+
+
+/*
+    // PRINT
+    Serial.print( "     whl_1_vl_PID_P: " ) ; 
+    Serial.print( whl_1_vl_PID_P, 2 ) ; 
+
+
+    // PRINT
+    Serial.print( "     whl_1_vl_PID_I: " ) ; 
+    Serial.print( whl_1_vl_PID_I, 2 ) ; 
+
+
+    // PRINT
+    Serial.print( "     whl_1_vl_PID_D: " ) ; 
+    Serial.print( whl_1_vl_PID_D, 2 ) ; 
+
+
+    // PRINT
+    Serial.print( "     whl_1_vl_KP: " ) ; 
+    Serial.print( whl_1_vl_PID_KP , 4 ) ; 
+
+
+    // PRINT
+    Serial.print( "     whl_1_vl_KI: " ) ; 
+    Serial.print( whl_1_vl_PID_KI , 4 ) ; 
+
+
+    // PRINT
+    Serial.print( "     whl_1_vl_KD: " ) ; 
+    Serial.print( whl_1_vl_PID_KD , 8 ) ; 
+
+*/
+
+
+
+/*
+    // PRINT
+    Serial.print( "     whl_2_out: " ) ; 
+    Serial.print( whl_2_vl_output, 1 ) ; 
+*/
+/*
+    // PRINT
+    Serial.print( "     ln_err: " ) ; 
+    Serial.print( line_error ) ; 
+
+
+    // PRINT
+    Serial.print( "     ln_err_out: " ) ; 
+    Serial.print( line_err_output, 4 ) ; 
+*/
+    
+/*
+    // PRINT
+    Serial.print( "     ln_err_out_test: " ) ; 
+    Serial.print( line_error * line_err_Kp_test , 4 ) ; 
+*/   
+
+
+} // <--- printout()
