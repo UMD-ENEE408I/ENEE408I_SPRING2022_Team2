@@ -1,0 +1,189 @@
+import pygame
+import random
+from enum import Enum
+from collections import namedtuple
+default_maze = [[1,   1,   1,   1,   0,   0,   0,   0,   0,   0],
+        [0,   0,   0,   1,   0,   0,   0,   0,   0,   0],
+        [0,   1,   1,   1,   1,   1,   1,   1,   1,   0],
+        [0,   0,   0,   1,   0,   0,   0,   1,   0,   0],
+        [0,   0,   0,   1,   1,   1,   1,   1,   1,  0],
+        [0,   0,   0,   1,   0,   0,   0,   0,   1,   0],
+        [0,   0,   0,   1,   0,   0,   0,   0,   1,   0],
+        [0,   0,   0,   1,   0,   0,   0,   0,   1,   0],
+        [0,   0,   0,   1,   0,   0,   0,   0,   1,   0],
+        [0,   0,   0,   1,   0,   0,   0,   0,   1,   .5]]
+
+pygame.init()
+
+font = pygame.font.SysFont('arial', 25)
+screen = pygame.display.set_mode([25,25])
+MARGIN = 5
+WIDTH = 20
+HEIGHT = 20
+#WINDOW_SIZE = [255, 255]
+class Direction(Enum):
+    RIGHT = 1
+    LEFT = 2
+    UP = 3
+    DOWN = 4
+Point = namedtuple('Point', 'row, column')
+# rgb colors
+WHITE = (255, 255, 255) #maze
+BLACK = (0,0,0)         #not the maze 
+BLUE1 = (0, 0, 255)
+BLUE2 = (0, 100, 255)
+BLACK = (0,0,0)
+GREEN = (0, 255, 0)
+RED = (255, 0, 0)
+BLOCK_SIZE =20
+SPEED = 1
+END_R = 180
+END_C = 180
+clock = pygame.time.Clock()
+class mazeAI:
+    
+    def __init__(self, w=250, h=250):
+        self.w = w
+        self.h = h
+        # init display
+        self.display = pygame.display.set_mode((self.w, self.h))
+        pygame.display.set_caption('Maze')
+        self.clock = pygame.time.Clock()
+        
+
+        self.maze = [[1,   1,   1,   1,   0,   0,   0,   0,   0,   0],
+        [0,   0,   0,   1,   0,   0,   0,   0,   0,   0],
+        [0,   1,   1,   1,   1,   1,   1,   1,   1,   0],
+        [0,   0,   0,   1,   0,   0,   0,   1,   0,   0],
+        [0,   0,   0,   1,   1,   1,   1,   1,   1,  0],
+        [0,   0,   0,   1,   0,   0,   0,   0,   1,   0],
+        [0,   0,   0,   1,   0,   0,   0,   0,   1,   0],
+        [0,   0,   0,   1,   0,   0,   0,   0,   1,   0],
+        [0,   0,   0,   1,   0,   0,   0,   0,   1,   0],
+        [0,   0,   0,   1,   0,   0,   0,   0,   1,   .5]]
+
+	self.discoveredMaze = [([0]*10) for i in range(10)]
+        self.reset()
+
+    def reset():
+        # init game state
+        self.direction = Direction.RIGHT
+        
+        self.head = Point(0,0)
+        self.snake = [self.head]
+        self.score = 0
+        self.frame_iteration = 0
+
+    def play_step(self):
+        # 1. collect user input
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                quit()
+      
+
+        # 2. move
+        self._move(action) # update the head
+       
+        
+        # 3. check if game over
+        if (self.head.column==END_C  and self.head.row == END_R):
+            game_over = True 
+            self.score=1
+            print("Solved")
+        else:
+            game_over = False
+            
+
+        
+        # 5. update ui and clock
+        self._update_ui()
+        self.clock.tick(SPEED)
+        # 6. return game over and score
+        return game_over, self.score
+
+
+  
+        
+    
+    def _update_ui(self):
+        self.display.fill(BLACK)
+        
+        WIDTH = 20
+        HEIGHT = 20           
+        #pygame.draw.rect(self.display, RED, pygame.Rect(self.food.x, self.food.y, BLOCK_SIZE, BLOCK_SIZE))
+        # Draw the grid 
+        #print(maze)
+        for row in range(10):
+            for column in range(10):
+                color = WHITE
+                if self.maze[row][column] == 1:
+                    color = WHITE
+                if self.maze[row][column] == 0:
+                    color = BLACK
+                if self.maze[row][column] == .5:
+                    color = GREEN
+                if self.maze[row][column] == .75:
+                    color = RED
+                pygame.draw.rect(screen,
+                                color,
+                                [(MARGIN + WIDTH) * column + MARGIN,
+                                  (MARGIN + HEIGHT) * row + MARGIN,
+                                  WIDTH,
+                                  HEIGHT])
+
+        pygame.display.flip()
+    def _options(self):
+	
+        if(self.maze[int(row_/20)][int(column_/20)+1] == 1)
+            
+	
+	
+    def _move(self, action):
+        row_ = self.head.row
+        column_ = self.head.column
+        print(row_)
+        clock_wise = [Direction.RIGHT, Direction.DOWN, Direction.LEFT, Direction.UP]
+        idx = clock_wise.index(self.direction)
+        if direction == Direction.RIGHT:
+            self.maze[int(row_/20)][int(column_/20)+1] = .75
+            self.maze[int(row_/20)][int(column_/20)] = default_maze[int(row_/20)][int(column_/20)]
+            column_ += BLOCK_SIZE		
+            print('RIGHT')
+        elif direction == Direction.LEFT:
+            self.maze[int(row_/20)][int(column_/20)-1] = .75
+            self.maze[int(row_/20)][int(column_/20)] = default_maze[int(row_/20)][int(column_/20)]
+            column_ -= BLOCK_SIZE
+            print('LEFT')
+        elif direction == Direction.DOWN:
+            self.maze[int(row_/20)+1][int(column_/20)] = .75
+            self.maze[int(row_/20)][int(column_/20)] = default_maze[int(row_/20)][int(column_/20)]
+            row_ += BLOCK_SIZE
+            print('down')
+        elif direction == Direction.UP:
+            self.maze[int(row_/20)-1][int(column_/20)] = .75
+            self.maze[int(row_/20)][int(column_/20)] = default_maze[int(row_/20)][int(column_/20)]
+            row_ -= BLOCK_SIZE
+            print('up')
+        
+        self.head = Point(row_, column_)
+        #maze = defalt_maze
+        #print(maze)
+        #maze[int(x/20)][int(y/20)] = .75
+        #print(maze)
+        print(self.head)    
+
+if __name__ == '__main__':
+    game = SnakeGame()
+    
+    # game loop
+    while True:
+    #for i in range(10):
+        game_over, score = game.play_step()
+        
+        if game_over == True:
+            break   
+    print('Solved?', score)
+        
+        
+    pygame.quit()
